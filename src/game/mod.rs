@@ -38,12 +38,9 @@ mod controller {
 
     pub fn run_play(game: &mut Game) {
         game.print();
-        let turn = game.step();
-        println!("=======TURN {}", turn);
-        // 2.1 wait play 
-        // 2.2 machine play
-        // 3. check status game
-        // game.set_status(GameStatus::OVER)
+        game.play();
+        game.check();
+        game.set_status(GameStatus::OVER);
     }
 
     pub fn run_over(game: &mut Game) {
