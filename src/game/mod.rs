@@ -1,7 +1,7 @@
 mod game_struct;
 
-use game_struct::GameStatus;
 pub use game_struct::Game;
+use game_struct::GameStatus;
 
 pub fn run() {
     println!("Game started");
@@ -18,8 +18,8 @@ pub fn run() {
 }
 
 mod controller {
-    use std::io;
     use super::*;
+    use std::io;
 
     pub fn run_init(game: &mut Game) {
         println!("Type your username");
@@ -39,13 +39,13 @@ mod controller {
     pub fn run_play(game: &mut Game) {
         game.print();
         game.play();
-        game.check();
-        game.set_status(GameStatus::OVER);
+        if game.check_finished() {
+            game.get_winner();
+            game.set_status(GameStatus::OVER);
+        }
     }
 
     pub fn run_over(game: &mut Game) {
-        game.on_over();
         game.set_status(GameStatus::INIT);
     }
 }
-
