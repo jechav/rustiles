@@ -39,8 +39,8 @@ mod controller {
     pub fn run_play(game: &mut Game) {
         game.print();
         game.play();
-        if game.check_finished() {
-            game.get_winner();
+        if let Some(game_over_type) = game.check_finished() {
+            game.get_winner(game_over_type);
             game.set_status(GameStatus::OVER);
         }
     }

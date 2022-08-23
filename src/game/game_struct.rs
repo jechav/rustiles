@@ -36,16 +36,29 @@ impl fmt::Display for Tile {
         )
     }
 }
+
+#[derive(Debug, Default)]
+struct Deck {
+    passed: bool,
+    deck: Vec<Tile>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum GameOverType {
+    AllPassed,
+    DirectWinner,
+}
+
 #[derive(Debug, Default)]
 pub struct Game {
     status: GameStatus,
     username: String,
     all_tiles: Vec<Tile>,
     board: Vec<Tile>,
-    player_deck: Vec<Tile>,
-    machine1_deck: Vec<Tile>,
-    machine2_deck: Vec<Tile>,
-    machine3_deck: Vec<Tile>,
+    player_deck: Deck,
+    machine1_deck: Deck,
+    machine2_deck: Deck,
+    machine3_deck: Deck,
     turns: Vec<u8>,
     current_turn: usize,
 }
@@ -73,10 +86,10 @@ impl Game {
                 }
             }
         }
-        self.player_deck = self.get_random_tiles();
-        self.machine1_deck = self.get_random_tiles();
-        self.machine2_deck = self.get_random_tiles();
-        self.machine3_deck = self.get_random_tiles();
+        self.player_deck.deck = self.get_random_tiles();
+        self.machine1_deck.deck = self.get_random_tiles();
+        self.machine2_deck.deck = self.get_random_tiles();
+        self.machine3_deck.deck = self.get_random_tiles();
     }
 
     fn assign_turn(&mut self) {
@@ -102,10 +115,11 @@ impl Game {
         }
     }
 
-    fn play_user(&mut self) -> bool {
-        if !self.check_deck_for_available_move(&self.player_deck) {
-            println!("You pass");
-            return false;
+    fn play_user(&mut self) {
+        if !self.check_deck_for_available_move(&self.player_deck.deck) {
+            println!("{}", format!("You Pass").red());
+            self.player_deck.passed = true;
+            return;
         }
 
         println!("Inset your move");
@@ -121,7 +135,7 @@ impl Game {
                 }
 
                 let num = num.unwrap();
-                let tile_move = self.player_deck.get(num);
+                let tile_move = self.player_deck.deck.get(num);
 
                 if !tile_move.is_some() {
                     println!("{}", format!("TIlE NOT FOUND INDEX {}", num).red());
@@ -143,10 +157,9 @@ impl Game {
                     println!("getting {:?}", move_dir);
                 }
 
-                let tile_move = self.player_deck.remove(num);
+                self.player_deck.passed = false;
+                let tile_move = self.player_deck.deck.remove(num);
                 self.move_tile(&move_dir, tile_move);
-
-                return true;
             }
             Err(error) => {
                 println!("error: {error}");
@@ -190,9 +203,9 @@ impl Game {
 
     fn play_machine(&mut self, turn: u8) {
         let machine_deck = match turn {
-            2 => Some(&self.machine1_deck),
-            3 => Some(&self.machine2_deck),
-            4 => Some(&self.machine3_deck),
+            2 => Some(&self.machine1_deck.deck),
+            3 => Some(&self.machine2_deck.deck),
+            4 => Some(&self.machine3_deck.deck),
             _ => None,
         };
 
@@ -203,6 +216,13 @@ impl Game {
 
         let machine_deck = machine_deck.unwrap();
         if !self.check_deck_for_available_move(&machine_deck) {
+            let machine_deck_mut = match turn {
+                2 => Some(&mut self.machine1_deck),
+                3 => Some(&mut self.machine2_deck),
+                4 => Some(&mut self.machine3_deck),
+                _ => None,
+            };
+            machine_deck_mut.unwrap().passed = true;
             println!("{}", format!("Machine {} pass", turn).red());
             return;
         }
@@ -215,8 +235,6 @@ impl Game {
         let available_moves = self.get_deck_for_available_move(&machine_deck);
         let mut available_idx: usize = 0;
 
-        println!("All Available moves {}", available_moves.len());
-
         // find the higher Tile (sum of his dots)
         if available_moves.len() > 1 {
             let mut higher_value = 0;
@@ -225,7 +243,6 @@ impl Game {
                 let tile_on_deck = machine_deck.get(deck_index).unwrap();
 
                 let sum_dots_on_tile = tile_on_deck.0 + tile_on_deck.1;
-                println!("Evaluation, {}, {}, {:?}", higher_value, sum_dots_on_tile, tile_on_deck);
                 if higher_value < sum_dots_on_tile {
                     higher_value = sum_dots_on_tile;
                     available_idx = idx;
@@ -233,25 +250,29 @@ impl Game {
             }
         }
 
-        println!("Available index {}", available_idx);
-
         let candidate = available_moves.get(available_idx).unwrap();
         let deck_index = candidate.0;
         let mut move_dir = candidate.1;
+
         let machine_deck_mut = match turn {
             2 => Some(&mut self.machine1_deck),
             3 => Some(&mut self.machine2_deck),
             4 => Some(&mut self.machine3_deck),
             _ => None,
         };
-        let tile_move = machine_deck_mut.unwrap().remove(deck_index);
+        if machine_deck_mut.is_some() {
+            let machine_deck_mut_2 = machine_deck_mut.unwrap();
 
-        // when both play randomly select HEAD or TAIL
-        if matches!(move_dir, Move::BOTH) {
-            move_dir = [Move::HEAD, Move::TAIL][thread_rng().gen_range(0..2)]
+            machine_deck_mut_2.passed = false;
+            let tile_move = machine_deck_mut_2.deck.remove(deck_index);
+
+            // when both play randomly select HEAD or TAIL
+            if matches!(move_dir, Move::BOTH) {
+                move_dir = [Move::HEAD, Move::TAIL][thread_rng().gen_range(0..2)]
+            }
+
+            self.move_tile(&move_dir, tile_move)
         }
-
-        self.move_tile(&move_dir, tile_move)
     }
 
     fn get_deck_for_available_move(&self, t_tiles: &Vec<Tile>) -> Vec<(usize, Move)> {
@@ -294,7 +315,6 @@ impl Game {
         if matches!(move_dir, Move::TAIL) {
             let last_index = self.board.len() - 1;
             let second_last_index = self.board.len() - 2;
-            println!("last index {} - {}", last_index, second_last_index);
 
             let last_tile = self.board.last().unwrap();
             let second_last_tile = self.board.get(second_last_index).unwrap();
@@ -346,14 +366,14 @@ impl Game {
     }
 
     fn print_players_deck(&self) {
-        println!("{:_^32}", "Player Deck".bold().red());
-        self.print_tiles(&self.player_deck, Some(true));
-        println!("{:_^32}", "Machine 1 Deck");
-        self.print_tiles(&self.machine1_deck, None);
+        println!("{:_^32}", "Player Deck".bold());
+        self.print_tiles(&self.player_deck.deck, Some(true));
         println!("{:_^32}", "Machine 2 Deck");
-        self.print_tiles(&self.machine2_deck, None);
+        self.print_tiles(&self.machine1_deck.deck, None);
         println!("{:_^32}", "Machine 3 Deck");
-        self.print_tiles(&self.machine3_deck, None);
+        self.print_tiles(&self.machine2_deck.deck, None);
+        println!("{:_^32}", "Machine 4 Deck");
+        self.print_tiles(&self.machine3_deck.deck, None);
     }
 
     fn print_board_deck(&self) {
@@ -370,20 +390,91 @@ impl Game {
                 print!("{} ", t);
             }
         }
-        println!("\n--------------------------");
-        println!();
+        println!("\n--------------------------\n");
     }
     /* END PRINT */
 
-    pub fn check_finished(&self) -> bool {
+    pub fn check_finished(&self) -> Option<GameOverType> {
         // check  users with empty deck
+        if self.get_all_decks().iter().any(|d| d.deck.is_empty()) {
+            return Some(GameOverType::DirectWinner);
+        }
         // check closed game - All pass
-        false
+        if self.get_all_decks().iter().all(|d| d.passed) {
+            return Some(GameOverType::AllPassed);
+        }
+
+        None
     }
 
-    pub fn get_winner(&self) {
-        // find by users with empty hands
-        // find user with less dots on his deck
+    pub fn get_winner(&self, game_over_type: GameOverType) {
+        match game_over_type {
+            GameOverType::DirectWinner => {
+                let payer_name = self.get_direct_winner().unwrap();
+                println!("{}", format!("Direct WINNER -> {}", payer_name).green());
+            }
+            GameOverType::AllPassed => {
+                let (idx_winner, dots_all_decks) = self.get_tie_winner();
+                println!(
+                    "{}",
+                    format!(
+                        "Tie WINNER -> {} Dots -> {} -> Deck {:?}",
+                        self.get_player_name(idx_winner),
+                        dots_all_decks.get(idx_winner).unwrap(),
+                        self.get_all_decks().get(idx_winner).unwrap().deck
+                    )
+                    .green()
+                );
+                println!("Results:");
+                for (idx, ad) in dots_all_decks.iter().enumerate() {
+                    if idx == idx_winner {
+                        continue;
+                    }
+                    println!("Player: {} - dots {}", self.get_player_name(idx), ad);
+                }
+            }
+        };
+    }
+
+    fn get_direct_winner(&self) -> Option<String> {
+        for (idx, d) in self.get_all_decks().iter().enumerate() {
+            if d.deck.is_empty() {
+                return Some(self.get_player_name(idx));
+            }
+        }
+        None
+    }
+
+    fn get_tie_winner(&self) -> (usize, Vec<u8>) {
+        let dots_all_decks: Vec<u8> = self
+            .get_all_decks()
+            .iter()
+            .map(|d| d.deck.iter().fold(0, |acc, d| acc + d.0 + d.1))
+            .collect();
+
+        // TODO: find duplicates for dots tie
+
+        let min_dots = dots_all_decks.iter().min().unwrap();
+        let idx_winner = dots_all_decks.iter().position(|r| r == min_dots).unwrap();
+
+        (idx_winner, dots_all_decks)
+    }
+
+    fn get_player_name(&self, idx: usize) -> String {
+        if idx != 0 {
+            return format!("Machine {}", idx + 1);
+        } else {
+            self.get_username().to_owned()
+        }
+    }
+
+    fn get_all_decks(&self) -> [&Deck; 4] {
+        [
+            &self.player_deck,
+            &self.machine1_deck,
+            &self.machine2_deck,
+            &self.machine3_deck,
+        ]
     }
 
     pub fn set_status(&mut self, status: GameStatus) {
@@ -400,5 +491,54 @@ impl Game {
 
     pub fn get_username(&self) -> &str {
         &self.username
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_check_all_passed() {
+        let mut game = Game::new(GameStatus::ONPROGRESS);
+        game.player_deck = Deck {
+            passed: true,
+            deck: vec![Tile(0, 1)],
+        };
+        game.machine1_deck = Deck {
+            passed: true,
+            deck: vec![Tile(0, 1)],
+        };
+        game.machine2_deck = Deck {
+            passed: true,
+            deck: vec![Tile(0, 1)],
+        };
+        game.machine3_deck = Deck {
+            passed: true,
+            deck: vec![Tile(0, 1)],
+        };
+        assert_eq!(game.check_finished(), Some(GameOverType::AllPassed));
+    }
+
+    #[test]
+    fn it_check_empty_deck() {
+        let mut game = Game::new(GameStatus::ONPROGRESS);
+        game.player_deck = Deck {
+            passed: false,
+            deck: vec![Tile(0, 1)],
+        };
+        game.machine1_deck = Deck {
+            passed: true,
+            deck: vec![Tile(0, 1)],
+        };
+        game.machine2_deck = Deck {
+            passed: false,
+            deck: vec![],
+        };
+        game.machine3_deck = Deck {
+            passed: true,
+            deck: vec![Tile(0, 1)],
+        };
+        assert_eq!(game.check_finished(), Some(GameOverType::DirectWinner));
     }
 }
