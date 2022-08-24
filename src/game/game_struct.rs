@@ -126,7 +126,6 @@ impl Game {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(_) => {
-                // TODO: check types
                 let num = input.trim().parse::<usize>();
 
                 if !num.is_ok() {
@@ -157,9 +156,10 @@ impl Game {
                     println!("getting {:?}", move_dir);
                 }
 
-                self.player_deck.passed = false;
                 let tile_move = self.player_deck.deck.remove(num);
+                self.player_deck.passed = false;
                 self.move_tile(&move_dir, tile_move);
+                self.arrange_board_tiles(&move_dir);
             }
             Err(error) => {
                 println!("error: {error}");
@@ -178,21 +178,14 @@ impl Game {
         let mut input_dir = String::new();
         match io::stdin().read_line(&mut input_dir) {
             Ok(_) => {
-                // TODO: check types
-                let dir = input_dir.trim().parse::<u32>();
-                if !dir.is_ok() {
-                    println!("Invalid input {} or {} allowed\n", 0, 1);
-                    return self.get_dir_input();
-                }
-                let dir = dir.unwrap();
-                if dir != 0 && dir != 1 {
-                    println!("Invalid input {} or {} allowed\n", 0, 1);
-                    return self.get_dir_input();
-                }
+                let dir = input_dir.trim().parse::<u32>().unwrap_or(2);
                 if dir == 0 {
                     return Some(Move::HEAD);
+                } else if dir == 1 {
+                    return Some(Move::TAIL);
                 }
-                return Some(Move::TAIL);
+                println!("Invalid input {} or {} allowed\n", 0, 1);
+                return self.get_dir_input();
             }
             Err(error) => {
                 println!("error: {error}");
@@ -201,28 +194,30 @@ impl Game {
         }
     }
 
-    fn play_machine(&mut self, turn: u8) {
-        let machine_deck = match turn {
-            2 => Some(&self.machine1_deck.deck),
-            3 => Some(&self.machine2_deck.deck),
-            4 => Some(&self.machine3_deck.deck),
-            _ => None,
-        };
-
-        if !machine_deck.is_some() {
-            println!("{}", format!("Invalid Turn").red());
-            return;
+    fn get_machine_from_turn(&self, turn: u8) -> &Deck {
+        match turn {
+            2 => &self.machine1_deck,
+            3 => &self.machine2_deck,
+            4 => &self.machine3_deck,
+            _ => panic!("Invalid Turn"),
         }
+    }
 
-        let machine_deck = machine_deck.unwrap();
+    fn get_mut_machine_from_turn(&mut self, turn: u8) -> &mut Deck {
+        match turn {
+            2 => &mut self.machine1_deck,
+            3 => &mut self.machine2_deck,
+            4 => &mut self.machine3_deck,
+            _ => panic!("Invalid Turn"),
+        }
+    }
+
+    fn play_machine(&mut self, turn: u8) {
+        let machine_deck = &self.get_machine_from_turn(turn).deck;
+
         if !self.check_deck_for_available_move(&machine_deck) {
-            let machine_deck_mut = match turn {
-                2 => Some(&mut self.machine1_deck),
-                3 => Some(&mut self.machine2_deck),
-                4 => Some(&mut self.machine3_deck),
-                _ => None,
-            };
-            machine_deck_mut.unwrap().passed = true;
+            let machine_deck_mut = self.get_mut_machine_from_turn(turn);
+            machine_deck_mut.passed = true;
             println!("{}", format!("Machine {} pass", turn).red());
             return;
         }
@@ -233,7 +228,7 @@ impl Game {
 
         // 1. find available tiles to pay
         let available_moves = self.get_deck_for_available_move(&machine_deck);
-        let mut available_idx: usize = 0;
+        let mut candidate_idx: usize = 0;
 
         // find the higher Tile (sum of his dots)
         if available_moves.len() > 1 {
@@ -245,34 +240,26 @@ impl Game {
                 let sum_dots_on_tile = tile_on_deck.0 + tile_on_deck.1;
                 if higher_value < sum_dots_on_tile {
                     higher_value = sum_dots_on_tile;
-                    available_idx = idx;
+                    candidate_idx = idx;
                 }
             }
         }
 
-        let candidate = available_moves.get(available_idx).unwrap();
+        let candidate = available_moves.get(candidate_idx).unwrap();
         let deck_index = candidate.0;
         let mut move_dir = candidate.1;
 
-        let machine_deck_mut = match turn {
-            2 => Some(&mut self.machine1_deck),
-            3 => Some(&mut self.machine2_deck),
-            4 => Some(&mut self.machine3_deck),
-            _ => None,
-        };
-        if machine_deck_mut.is_some() {
-            let machine_deck_mut_2 = machine_deck_mut.unwrap();
-
-            machine_deck_mut_2.passed = false;
-            let tile_move = machine_deck_mut_2.deck.remove(deck_index);
-
-            // when both play randomly select HEAD or TAIL
-            if matches!(move_dir, Move::BOTH) {
-                move_dir = [Move::HEAD, Move::TAIL][thread_rng().gen_range(0..2)]
-            }
-
-            self.move_tile(&move_dir, tile_move)
+        // when both play randomly select HEAD or TAIL
+        if matches!(move_dir, Move::BOTH) {
+            move_dir = [Move::HEAD, Move::TAIL][thread_rng().gen_range(0..2)]
         }
+
+        let machine_deck_mut = self.get_mut_machine_from_turn(turn);
+
+        let tile_move = machine_deck_mut.deck.remove(deck_index);
+        machine_deck_mut.passed = false;
+        self.move_tile(&move_dir, tile_move);
+        self.arrange_board_tiles(&move_dir);
     }
 
     fn get_deck_for_available_move(&self, t_tiles: &Vec<Tile>) -> Vec<(usize, Move)> {
@@ -294,7 +281,6 @@ impl Game {
         } else {
             panic!("Invalid Move when moving tile")
         }
-        self.arrange_board_tiles(&move_dir);
     }
 
     /*
@@ -348,7 +334,11 @@ impl Game {
         let valid_head = tile.1 == head_value || tile.0 == head_value;
         let valid_tail = tile.1 == tail_value || tile.0 == tail_value;
 
-        if valid_head && valid_tail {
+        // use this when playing head or tails doesn't have any
+        // impact on the move since both are the same and will
+        // end up the exact result in terms of playing
+        let is_same_head_tail = head_value == tail_value;
+        if valid_head && valid_tail && !is_same_head_tail {
             Move::BOTH
         } else if valid_head {
             Move::HEAD
@@ -407,7 +397,7 @@ impl Game {
         None
     }
 
-    pub fn get_winner(&self, game_over_type: GameOverType) {
+    pub fn print_winner(&self, game_over_type: GameOverType) {
         match game_over_type {
             GameOverType::DirectWinner => {
                 let payer_name = self.get_direct_winner().unwrap();
@@ -452,8 +442,6 @@ impl Game {
             .map(|d| d.deck.iter().fold(0, |acc, d| acc + d.0 + d.1))
             .collect();
 
-        // TODO: find duplicates for dots tie
-
         let min_dots = dots_all_decks.iter().min().unwrap();
         let idx_winner = dots_all_decks.iter().position(|r| r == min_dots).unwrap();
 
@@ -461,6 +449,9 @@ impl Game {
     }
 
     fn get_player_name(&self, idx: usize) -> String {
+        if idx >= self.get_all_decks().len() {
+            panic!("Invalid index {}", idx);
+        }
         if idx != 0 {
             return format!("Machine {}", idx + 1);
         } else {
@@ -540,5 +531,19 @@ mod tests {
             deck: vec![Tile(0, 1)],
         };
         assert_eq!(game.check_finished(), Some(GameOverType::DirectWinner));
+    }
+
+    #[test]
+    fn it_check_player_name() {
+        let mut game = Game::new(GameStatus::ONPROGRESS);
+        game.set_username("test_user");
+        assert_eq!(game.get_player_name(0), "test_user");
+    }
+
+    #[test]
+    #[should_panic]
+    fn it_check_player_name_invalid() {
+        let game = Game::new(GameStatus::ONPROGRESS);
+        game.get_player_name(20);
     }
 }

@@ -1,6 +1,6 @@
 mod game_struct;
 
-pub use game_struct::Game;
+use game_struct::Game;
 use game_struct::GameStatus;
 
 pub fn run() {
@@ -40,7 +40,7 @@ mod controller {
         game.print();
         game.play();
         if let Some(game_over_type) = game.check_finished() {
-            game.get_winner(game_over_type);
+            game.print_winner(game_over_type);
             game.set_status(GameStatus::OVER);
         }
     }
