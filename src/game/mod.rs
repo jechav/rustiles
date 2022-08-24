@@ -6,13 +6,13 @@ use game_struct::GameStatus;
 pub fn run() {
     println!("Game started");
 
-    let mut game = Game::new(GameStatus::INIT);
+    let mut game = Game::new(GameStatus::Init);
 
     loop {
         match game.get_status() {
-            GameStatus::INIT => controller::run_init(&mut game),
-            GameStatus::ONPROGRESS => controller::run_play(&mut game),
-            GameStatus::OVER => controller::run_over(&mut game),
+            GameStatus::Init => controller::run_init(&mut game),
+            GameStatus::OnProgress => controller::run_play(&mut game),
+            GameStatus::Over => controller::run_over(&mut game),
         }
     }
 }
@@ -28,7 +28,7 @@ mod controller {
         match io::stdin().read_line(&mut input) {
             Ok(_) => {
                 game.set_username(&input);
-                game.set_status(GameStatus::ONPROGRESS);
+                game.set_status(GameStatus::OnProgress);
                 println!("Hi -> {}", game.get_username());
                 game.start();
             }
@@ -41,11 +41,11 @@ mod controller {
         game.play();
         if let Some(game_over_type) = game.check_finished() {
             game.print_winner(game_over_type);
-            game.set_status(GameStatus::OVER);
+            game.set_status(GameStatus::Over);
         }
     }
 
     pub fn run_over(game: &mut Game) {
-        game.set_status(GameStatus::INIT);
+        game.set_status(GameStatus::Init);
     }
 }
