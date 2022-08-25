@@ -1,4 +1,5 @@
 use colored::Colorize;
+use pad::{Alignment, PadStr};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use rand::Rng;
@@ -36,7 +37,7 @@ impl fmt::Display for Tile {
         write!(
             f,
             "[{}, {}]",
-            format!("{}", self.0).red(),
+            format!("{}", self.0).bright_green(),
             format!("{}", self.1).green()
         )
     }
@@ -58,7 +59,6 @@ pub enum GameOverType {
 pub struct Game {
     status: GameStatus,
     username: String,
-    all_tiles: Vec<Tile>,
     board: Vec<Tile>,
     player_deck: Deck,
     machine1_deck: Deck,
@@ -84,27 +84,28 @@ impl Game {
     }
 
     fn deal_tiles(&mut self) {
+        let mut all_tiles: Vec<Tile> = vec![];
         for i in 0..7 {
             for k in 0..7 {
                 if i >= k {
-                    self.all_tiles.push(Tile(i, k))
+                    all_tiles.push(Tile(i, k))
                 }
             }
         }
-        self.player_deck.deck = self.get_random_tiles();
-        self.machine1_deck.deck = self.get_random_tiles();
-        self.machine2_deck.deck = self.get_random_tiles();
-        self.machine3_deck.deck = self.get_random_tiles();
+        self.player_deck.deck = Self::get_random_tiles(&mut all_tiles);
+        self.machine1_deck.deck = Self::get_random_tiles(&mut all_tiles);
+        self.machine2_deck.deck = Self::get_random_tiles(&mut all_tiles);
+        self.machine3_deck.deck = Self::get_random_tiles(&mut all_tiles);
+    }
+
+    fn get_random_tiles(all_tiles: &mut Vec<Tile>) -> Vec<Tile> {
+        all_tiles.shuffle(&mut thread_rng());
+        all_tiles.drain(..7).collect::<Vec<Tile>>()
     }
 
     fn assign_turn(&mut self) {
         self.turns.shuffle(&mut thread_rng());
         println!("TURNS AFTER SHUFFLE {:?}", self.turns);
-    }
-
-    fn get_random_tiles(&mut self) -> Vec<Tile> {
-        self.all_tiles.shuffle(&mut thread_rng());
-        self.all_tiles.drain(..7).collect::<Vec<Tile>>()
     }
 
     pub fn play(&mut self) {
@@ -357,31 +358,40 @@ impl Game {
     }
 
     fn print_players_deck(&self) {
-        println!("{:_^32}", "Player Deck".bold());
-        self.print_tiles(&self.player_deck.deck, Some(true));
-        println!("{:_^32}", "Machine 2 Deck");
-        self.print_tiles(&self.machine1_deck.deck, None);
-        println!("{:_^32}", "Machine 3 Deck");
-        self.print_tiles(&self.machine2_deck.deck, None);
-        println!("{:_^32}", "Machine 4 Deck");
-        self.print_tiles(&self.machine3_deck.deck, None);
+        for (idx, d) in self.get_all_decks().iter().enumerate() {
+            let with_number = if idx == 0 { Some(true) } else { None };
+            let name = self.get_player_name(idx);
+
+            println!("{:_^32}", format!("{} Deck", name).bold());
+            self.print_tiles(&d.deck, with_number);
+        }
     }
 
     fn print_board_deck(&self) {
         println!("Board");
         self.print_tiles(&self.board, None);
+        println!();
     }
 
     fn print_tiles(&self, tiles: &Vec<Tile>, with_number: Option<bool>) {
         println!("Length {}", tiles.len());
-        for (ind, t) in tiles.iter().enumerate() {
-            if with_number.unwrap_or(false) {
-                print!("{}-{} ", format!("#{}", ind).bold().on_green().white(), t);
-            } else {
-                print!("{} ", t);
+        if with_number.unwrap_or(false) {
+            for ind in 0..tiles.len() {
+                print!(
+                    "{} ",
+                    format!("#{}", ind)
+                        .pad_to_width_with_alignment(6, Alignment::Middle)
+                        .bold()
+                        .on_purple()
+                        .white()
+                );
             }
+            println!();
         }
-        println!("\n--------------------------\n");
+        for t in tiles {
+            print!("{} ", t);
+        }
+        println!("\n");
     }
     /* END PRINT */
 
@@ -456,7 +466,7 @@ impl Game {
         if idx != 0 {
             format!("Machine {}", idx + 1)
         } else {
-            self.get_username().to_owned()
+            self.get_username().trim().to_owned()
         }
     }
 
